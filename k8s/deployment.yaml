@@ -47,6 +47,11 @@ spec:
                 secretKeyRef:
                   name: users-db-credentials
                   key: password
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: jwt-secret
           resources:
             requests:
               cpu: 100m

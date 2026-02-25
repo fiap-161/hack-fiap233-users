@@ -2,22 +2,16 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 
+	"github.com/hack-fiap233/users/internal/handler"
+	"github.com/hack-fiap233/users/internal/repository"
+	"github.com/hack-fiap233/users/internal/service"
 	_ "github.com/lib/pq"
 )
-
-var db *sql.DB
-
-type User struct {
-	ID    int    `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
-}
 
 func main() {
 	port := os.Getenv("PORT")
@@ -25,17 +19,28 @@ func main() {
 		port = "8080"
 	}
 
-	initDB()
-	createTable()
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET environment variable is required")
+	}
 
-	http.HandleFunc("/users/health", healthHandler)
-	http.HandleFunc("/users/", usersHandler)
+	db := initDB()
+	migrateDB(db)
+
+	repo := repository.New().WithDB(db).Build()
+	svc := service.New().WithRepository(repo).WithJWTSecret(jwtSecret).Build()
+	h := handler.New().WithService(svc).Build()
+
+	http.HandleFunc("/users/health", h.Health)
+	http.HandleFunc("/users/register", h.Register)
+	http.HandleFunc("/users/login", h.Login)
+	http.HandleFunc("/users/", h.List)
 
 	log.Printf("Users service listening on :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
-func initDB() {
+func initDB() *sql.DB {
 	connStr := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=require",
 		os.Getenv("DB_HOST"),
@@ -45,8 +50,7 @@ func initDB() {
 		os.Getenv("DB_NAME"),
 	)
 
-	var err error
-	db, err = sql.Open("postgres", connStr)
+	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -56,82 +60,17 @@ func initDB() {
 	}
 
 	log.Println("Connected to PostgreSQL")
+	return db
 }
 
-func createTable() {
+func migrateDB(db *sql.DB) {
 	query := `CREATE TABLE IF NOT EXISTS users (
 		id SERIAL PRIMARY KEY,
 		name TEXT NOT NULL,
-		email TEXT NOT NULL
+		email TEXT NOT NULL UNIQUE,
+		password_hash TEXT NOT NULL
 	)`
 	if _, err := db.Exec(query); err != nil {
-		log.Fatalf("Failed to create table: %v", err)
+		log.Fatalf("Failed to migrate database: %v", err)
 	}
-}
-
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	err := db.Ping()
-	if err != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy", "db": err.Error()})
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "users", "db": "connected"})
-}
-
-func usersHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	switch r.Method {
-	case http.MethodGet:
-		listUsers(w)
-	case http.MethodPost:
-		createUser(w, r)
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
-	}
-}
-
-func listUsers(w http.ResponseWriter) {
-	rows, err := db.Query("SELECT id, name, email FROM users ORDER BY id")
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
-	}
-	defer rows.Close()
-
-	users := []User{}
-	for rows.Next() {
-		var u User
-		if err := rows.Scan(&u.ID, &u.Name, &u.Email); err != nil {
-			continue
-		}
-		users = append(users, u)
-	}
-	json.NewEncoder(w).Encode(users)
-}
-
-func createUser(w http.ResponseWriter, r *http.Request) {
-	var u User
-	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON"})
-		return
-	}
-
-	err := db.QueryRow(
-		"INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id",
-		u.Name, u.Email,
-	).Scan(&u.ID)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
-	}
-
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(u)
 }
