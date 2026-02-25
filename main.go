@@ -8,9 +8,11 @@ import (
 	"os"
 
 	"github.com/hack-fiap233/users/internal/handler"
+	"github.com/hack-fiap233/users/internal/middleware"
 	"github.com/hack-fiap233/users/internal/repository"
 	"github.com/hack-fiap233/users/internal/service"
 	_ "github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -31,10 +33,11 @@ func main() {
 	svc := service.New().WithRepository(repo).WithJWTSecret(jwtSecret).Build()
 	h := handler.New().WithService(svc).Build()
 
-	http.HandleFunc("/users/health", h.Health)
-	http.HandleFunc("/users/register", h.Register)
-	http.HandleFunc("/users/login", h.Login)
-	http.HandleFunc("/users/", h.List)
+	http.Handle("/metrics", promhttp.Handler())
+	http.HandleFunc("/users/health", middleware.Metrics("/users/health", h.Health))
+	http.HandleFunc("/users/register", middleware.Metrics("/users/register", h.Register))
+	http.HandleFunc("/users/login", middleware.Metrics("/users/login", h.Login))
+	http.HandleFunc("/users/", middleware.Metrics("/users/", h.List))
 
 	log.Printf("Users service listening on :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
