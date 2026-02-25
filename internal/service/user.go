@@ -14,6 +14,8 @@ import (
 var (
 	ErrEmailTaken         = errors.New("email already registered")
 	ErrInvalidCredentials = errors.New("invalid credentials")
+	// ErrDuplicateEmail is returned by UserRepository when a unique constraint fires.
+	ErrDuplicateEmail = errors.New("duplicate email")
 )
 
 type User struct {
@@ -77,7 +79,10 @@ func (s *userService) Register(ctx context.Context, name, email, password string
 
 	user, err := s.repo.Create(ctx, name, email, string(hash))
 	if err != nil {
-		return nil, ErrEmailTaken
+		if errors.Is(err, ErrDuplicateEmail) {
+			return nil, ErrEmailTaken
+		}
+		return nil, fmt.Errorf("creating user: %w", err)
 	}
 
 	token, err := s.generateToken(user)

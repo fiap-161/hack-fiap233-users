@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/hack-fiap233/users/internal/service"
+	"github.com/lib/pq"
 )
 
 type postgresRepository struct {
@@ -35,6 +36,9 @@ func (r *postgresRepository) Create(ctx context.Context, name, email, passwordHa
 		name, email, passwordHash,
 	).Scan(&u.ID, &u.Name, &u.Email)
 	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+			return nil, service.ErrDuplicateEmail
+		}
 		return nil, err
 	}
 	return &u, nil

@@ -64,13 +64,22 @@ func initDB() *sql.DB {
 }
 
 func migrateDB(db *sql.DB) {
-	query := `CREATE TABLE IF NOT EXISTS users (
-		id SERIAL PRIMARY KEY,
-		name TEXT NOT NULL,
-		email TEXT NOT NULL UNIQUE,
-		password_hash TEXT NOT NULL
-	)`
-	if _, err := db.Exec(query); err != nil {
-		log.Fatalf("Failed to migrate database: %v", err)
+	migrations := []string{
+		// Cria a tabela com o schema completo (se não existir)
+		`CREATE TABLE IF NOT EXISTS users (
+			id SERIAL PRIMARY KEY,
+			name TEXT NOT NULL,
+			email TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL DEFAULT ''
+		)`,
+		// Adiciona password_hash caso a tabela já existia sem essa coluna
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT ''`,
+		// Garante unique constraint no email caso a tabela existia sem ela
+		`CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email)`,
+	}
+	for _, q := range migrations {
+		if _, err := db.Exec(q); err != nil {
+			log.Fatalf("Migration failed: %v", err)
+		}
 	}
 }
