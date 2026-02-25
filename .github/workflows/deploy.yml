@@ -76,7 +76,7 @@ jobs:
           helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
             --namespace monitoring \
             --create-namespace \
-            --values k8s/monitoring-values.yaml \
+            --values monitoring-values.yaml \
             --wait --timeout 5m
 
       - name: Deploy to EKS
