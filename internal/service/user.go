@@ -14,6 +14,7 @@ import (
 var (
 	ErrEmailTaken         = errors.New("email already registered")
 	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrUserNotFound       = errors.New("user not found")
 	// ErrDuplicateEmail is returned by UserRepository when a unique constraint fires.
 	ErrDuplicateEmail = errors.New("duplicate email")
 )
@@ -33,6 +34,7 @@ type AuthOutput struct {
 type UserRepository interface {
 	Create(ctx context.Context, name, email, passwordHash string) (*User, error)
 	FindByEmail(ctx context.Context, email string) (*User, string, error)
+	FindByID(ctx context.Context, id int) (*User, error)
 	List(ctx context.Context) ([]*User, error)
 	Ping(ctx context.Context) error
 }
@@ -40,7 +42,9 @@ type UserRepository interface {
 type UserService interface {
 	Register(ctx context.Context, name, email, password string) (*AuthOutput, error)
 	Login(ctx context.Context, email, password string) (*AuthOutput, error)
-	ListUsers(ctx context.Context) ([]*User, error)
+	GetByID(ctx context.Context, id int) (*User, error)
+	ListUsers(ctx context.Context, userID int) ([]*User, error)
+	ListAllUsers(ctx context.Context) ([]*User, error)
 	Health(ctx context.Context) error
 }
 
@@ -114,7 +118,32 @@ func (s *userService) Login(ctx context.Context, email, password string) (*AuthO
 	return &AuthOutput{Token: token, User: *user}, nil
 }
 
-func (s *userService) ListUsers(ctx context.Context) ([]*User, error) {
+func (s *userService) GetByID(ctx context.Context, id int) (*User, error) {
+	u, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
+	}
+	return u, nil
+}
+
+// ListUsers retorna apenas o usuário com o ID informado (listagem segura: um único usuário).
+// Em produção o API Gateway injeta X-User-Id; o handler passa esse ID.
+func (s *userService) ListUsers(ctx context.Context, userID int) ([]*User, error) {
+	u, err := s.repo.FindByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return []*User{u}, nil
+}
+
+// ListAllUsers retorna todos os usuários. Deve ser usada apenas em rotas protegidas (usuário logado).
+func (s *userService) ListAllUsers(ctx context.Context) ([]*User, error) {
 	return s.repo.List(ctx)
 }
 
