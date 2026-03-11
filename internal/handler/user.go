@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/hack-fiap233/users/internal/middleware"
 	"github.com/hack-fiap233/users/internal/service"
 )
 
@@ -105,13 +106,45 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, out)
 }
 
+// Me retorna o usuário autenticado
+func (h *UserHandler) Me(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "missing or invalid X-User-Id header")
+		return
+	}
+
+	user, err := h.svc.GetByID(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			respondError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	respond(w, http.StatusOK, user)
+}
+
+// List exige usuário logado e retorna todos os usuários.
 func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
-	users, err := h.svc.ListUsers(r.Context())
+	if _, ok := middleware.UserIDFromContext(r.Context()); !ok {
+		respondError(w, http.StatusUnauthorized, "missing or invalid X-User-Id header")
+		return
+	}
+
+	users, err := h.svc.ListAllUsers(r.Context())
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "internal server error")
 		return

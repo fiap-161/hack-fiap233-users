@@ -37,20 +37,27 @@ func main() {
 	http.HandleFunc("/users/health", middleware.Metrics("/users/health", h.Health))
 	http.HandleFunc("/users/register", middleware.Metrics("/users/register", h.Register))
 	http.HandleFunc("/users/login", middleware.Metrics("/users/login", h.Login))
-	http.HandleFunc("/users/", middleware.Metrics("/users/", h.List))
+	// Rotas protegidas: exigem X-User-Id (repassado pelo API Gateway após validar JWT)
+	http.HandleFunc("/users/me", middleware.Metrics("/users/me", middleware.RequireUserID(h.Me)))
+	http.HandleFunc("/users/", middleware.Metrics("/users/", middleware.RequireUserID(h.List)))
 
 	log.Printf("Users service listening on :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
 func initDB() *sql.DB {
+	sslmode := os.Getenv("DB_SSLMODE")
+	if sslmode == "" {
+		sslmode = "require"
+	}
 	connStr := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=require",
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		os.Getenv("DB_HOST"),
 		os.Getenv("DB_PORT"),
 		os.Getenv("DB_USERNAME"),
 		os.Getenv("DB_PASSWORD"),
 		os.Getenv("DB_NAME"),
+		sslmode,
 	)
 
 	db, err := sql.Open("postgres", connStr)

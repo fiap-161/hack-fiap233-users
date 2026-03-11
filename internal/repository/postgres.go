@@ -57,6 +57,18 @@ func (r *postgresRepository) FindByEmail(ctx context.Context, email string) (*se
 	return &u, hash, nil
 }
 
+func (r *postgresRepository) FindByID(ctx context.Context, id int) (*service.User, error) {
+	var u service.User
+	err := r.db.QueryRowContext(ctx,
+		"SELECT id, name, email FROM users WHERE id = $1",
+		id,
+	).Scan(&u.ID, &u.Name, &u.Email)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
 func (r *postgresRepository) List(ctx context.Context) ([]*service.User, error) {
 	rows, err := r.db.QueryContext(ctx, "SELECT id, name, email FROM users ORDER BY id")
 	if err != nil {
